@@ -1,0 +1,10 @@
+module(
+    name = "esp_idf_bazel",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "rules_shell", version = "0.6.1")
+
+esp_toolchain = use_repo_rule("//bazel:esp_toolchain.bzl", "esp_toolchain")
+
+esp_toolchain(name = "esp_toolchain")

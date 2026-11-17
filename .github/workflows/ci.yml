@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  ESP_IDF_VERSION: v6.1.1
+  ESP_IDF_PATH: ${{ github.workspace }}/.esp-idf
+  IDF_TOOLS_PATH: ${{ github.workspace }}/.espressif
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rustup is what links the toolchain below, and GitHub's ubuntu runner
+      # does not put it on PATH for later steps by itself.
+      - name: Set up rustup
+        run: |
+          if ! command -v rustup; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
+              sh -s -- -y --profile minimal
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # Links the esp-rs Rust toolchain into rustup as the `esp` toolchain that
+      # rust-toolchain.toml asks for. It is the only rustc with a
+      # `*-esp-espidf` std and the nightly cargo that -Zbuild-std needs.
+      # A prefix under $HOME keeps this in the runner's own rustup; running it
+      # under sudo would link into root's.
+      - name: Install the esp-rs Rust toolchain
+        run: |
+          ESP_RUST_PREFIX="$HOME/esp-rust" bash scripts/install-esp-rust.sh
+
+      # espup provides riscv32-esp-elf-gcc and ldproxy. It also installs the
+      # Xtensa-flavoured `esp` toolchain, which would replace the one linked
+      # above, so it gets its own name.
+      - name: Install the RISC-V compiler and ldproxy
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          curl -sSLO "https://github.com/esp-rs/embuild/releases/latest/download/ldproxy-$host.zip"
+          curl -sSLO "https://github.com/esp-rs/espup/releases/latest/download/espup-$host.zip"
+          mkdir -p "$HOME/.cargo/bin"
+          unzip -oq "ldproxy-$host.zip" -d "$HOME/.cargo/bin"
+          unzip -oq "espup-$host.zip" -d "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/ldproxy"* "$HOME/.cargo/bin/espup"*
+          ESPUP_EXPORT_FILE="$HOME/exports" "$HOME/.cargo/bin/espup" install \
+            --targets esp32c6 --name esp-gcc
+          cat "$HOME/exports" >> "$GITHUB_ENV"
+
+      # espup ships the Rust side only; ESP-IDF, its Python packages and the
+      # ROM ELFs come from ESP-IDF's own installer.
+      - name: Install ESP-IDF
+        run: |
+          git clone --depth 1 --branch "$ESP_IDF_VERSION" \
+            --recurse-submodules --shallow-submodules \
+            https://github.com/espressif/esp-idf.git "$ESP_IDF_PATH"
+          "$ESP_IDF_PATH/install.sh" esp32c6
+          echo "$ESP_IDF_PATH/tools" >> "$GITHUB_PATH"
+
+      - name: Install Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-version: 1.26.0
+
+      # The ESP-IDF build shells out to cmake and ninja, and bindgen needs a
+      # clang whose libclang matches the LIBCLANG_PATH exported below.
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang libclang-dev libusb-1.0-0
+
+      # ESP-IDF skips its Python dependency check when cmake is told the check
+      # already ran; `idf.py` passes that flag, esp-idf-sys calls cmake plainly.
+      # nix does the same with a cmake wrapper in flake.nix.
+      - name: Wrap cmake with the flag ESP-IDF expects from idf.py
+        run: |
+          sudo mv /usr/bin/cmake /usr/bin/cmake.real
+          sudo tee /usr/bin/cmake >/dev/null <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  case "$arg" in
+    --build|--install|--open|-E) exec /usr/bin/cmake.real "$@";;
+  esac
+done
+exec /usr/bin/cmake.real "$@" -DPYTHON_DEPS_CHECKED=1
+WRAPPER
+          sudo chmod +x /usr/bin/cmake
+
+      - name: Expose the toolchain where //bazel:esp_toolchain.bzl reads it
+        run: |
+          . "$ESP_IDF_PATH/export.sh"
+          {
+            echo "ESP_TOOLCHAIN_IDF=$IDF_PATH"
+            echo "ESP_TOOLCHAIN_ROM_ELFS=$ESP_ROM_ELF_DIR"
+            echo "ESP_TOOLCHAIN_LIBCLANG=$(dirname "$(find /usr/lib -name 'libclang.so*' -print -quit)")"
+            echo "ESP_TOOLCHAIN_PATH=$PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Build
+        run: bazel build //...
+
+      - name: Test
+        run: bazel test //...

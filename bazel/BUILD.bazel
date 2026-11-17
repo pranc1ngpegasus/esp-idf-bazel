@@ -1,0 +1,23 @@
+"""Package for the firmware build rule and the toolchain path repository rule."""
+
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+exports_files([
+    "esp_idf.bzl",
+    "esp_toolchain.bzl",
+])
+
+sh_test(
+    name = "verify_firmware_test",
+    srcs = ["verify_firmware.sh"],
+    args = [
+        "$(rootpath //:elf)",
+        "$(rootpath //:bootloader)",
+        "$(rootpath //:partition_table)",
+    ],
+    data = [
+        "//:bootloader",
+        "//:elf",
+        "//:partition_table",
+    ],
+)

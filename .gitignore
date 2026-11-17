@@ -1,6 +1,7 @@
 .direnv
 .embuild
 .pre-commit-config.yaml
+/bazel-*
 /result
 /result-*
 /target

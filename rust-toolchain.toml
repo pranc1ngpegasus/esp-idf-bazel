@@ -1,3 +1,2 @@
 [toolchain]
-channel = "nightly"
-components = ["clippy", "rust-src", "rustfmt"]
+channel = "esp"

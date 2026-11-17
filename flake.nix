@@ -1,4 +1,6 @@
 {
+  description = "ESP-IDF firmware: nix supplies the toolchain, Bazel orchestrates the build";
+
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -22,7 +24,171 @@
       perSystem =
         { pkgs, system, ... }:
         let
+          # ESP-IDF v6.1.1 tools.json, host linux-amd64, "recommended" versions.
+          patchPrebuilt = {
+            nativeBuildInputs = [
+              pkgs.autoPatchelfHook
+              pkgs.patchelf
+            ];
+            buildInputs = [
+              pkgs.stdenv.cc.cc.lib
+              pkgs.zlib
+              pkgs.glibc
+            ];
+          };
+
+          prebuilt =
+            {
+              pname,
+              version,
+              src,
+              stripComponents,
+            }:
+            pkgs.stdenv.mkDerivation {
+              inherit pname version src;
+              inherit (patchPrebuilt) nativeBuildInputs buildInputs;
+              unpackPhase = ''
+                runHook preUnpack
+                tar -xf $src --strip-components=${toString stripComponents}
+                runHook postUnpack
+              '';
+              dontConfigure = true;
+              dontBuild = true;
+              installPhase = ''
+                runHook preInstall
+                mkdir -p $out
+                cp -r . $out/
+                runHook postInstall
+              '';
+            };
+
+          espRust = pkgs.stdenv.mkDerivation {
+            pname = "esp-rust-toolchain";
+            version = "1.100.0.0";
+            src = pkgs.fetchurl {
+              url = "https://github.com/esp-rs/rust-build/releases/download/v1.100.0.0/rust-1.100.0.0-x86_64-unknown-linux-gnu.tar.xz";
+              hash = "sha256-Wp+tPi+ELdcnGeR+ONWNdt+44mB0xkEIPgLX9mo0Cgw=";
+            };
+            rustSrc = pkgs.fetchurl {
+              url = "https://github.com/esp-rs/rust-build/releases/download/v1.100.0.0/rust-src-1.100.0.0.tar.xz";
+              hash = "sha256-vsSi59kUwjc5H53aH1MJddkv2m+xWzx8zDBTyxFvnU4=";
+            };
+            inherit (patchPrebuilt) nativeBuildInputs buildInputs;
+            unpackPhase = ''
+              runHook preUnpack
+              tar -xJf $src --strip-components=1
+              # rust-src extracts to rust-src-nightly/rust-src/lib/rustlib/src/rust;
+              # build-std needs it at <sysroot>/lib/rustlib/src/rust.
+              tar -xJf $rustSrc -C rustc/lib/rustlib --strip-components=4
+              runHook postUnpack
+            '';
+            dontConfigure = true;
+            dontBuild = true;
+            installPhase = ''
+              runHook preInstall
+              cp -r . $out
+              runHook postInstall
+            '';
+            postFixup = ''
+              # build-std also compiles build scripts and proc-macros for the
+              # host, which need the host std shipped as a separate component.
+              cp -r $out/rust-std-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/. \
+                $out/rustc/lib/rustlib/x86_64-unknown-linux-gnu/
+
+              install -d $out/bin
+              ln -s $out/cargo/bin/cargo $out/bin/cargo
+              ln -s $out/rustc/bin/rustc $out/bin/rustc
+              ln -s $out/rustc/bin/rustdoc $out/bin/rustdoc
+              ln -s $out/rustfmt-preview/bin/rustfmt $out/bin/rustfmt
+              ln -s $out/rustfmt-preview/bin/cargo-fmt $out/bin/cargo-fmt
+              ln -s $out/clippy-preview/bin/cargo-clippy $out/bin/cargo-clippy
+              ln -s $out/clippy-preview/bin/clippy-driver $out/bin/clippy-driver
+            '';
+          };
+
+          riscv32-esp-elf = prebuilt {
+            pname = "riscv32-esp-elf";
+            version = "esp-15.2.0_20251204";
+            src = pkgs.fetchurl {
+              url = "https://github.com/espressif/crosstool-NG/releases/download/esp-15.2.0_20251204/riscv32-esp-elf-15.2.0_20251204-x86_64-linux-gnu.tar.xz";
+              hash = "sha256-rOWq5q/pj3VJR74EPUAXPi4irOV3VLEaOUtyOO76Ac8=";
+            };
+            stripComponents = 1;
+          };
+
+          espRomElfs = prebuilt {
+            pname = "esp-rom-elfs";
+            version = "20260528";
+            src = pkgs.fetchurl {
+              url = "https://github.com/espressif/esp-rom-elfs/releases/download/20260528/esp-rom-elfs-20260528.tar.gz";
+              hash = "sha256-yqRj08vvJDClo1hHwdny8VJAOxeoAgUJJ/9gyNpU/kY=";
+            };
+            stripComponents = 0;
+          };
+
+          espIdf = pkgs.fetchgit {
+            url = "https://github.com/espressif/esp-idf";
+            rev = "v6.1.1";
+            hash = "sha256-TpTA8UIAo3aWSkRosozrOepQF6lka2x5/z8NfnHF8Rc=";
+            fetchSubmodules = true;
+          };
+
+          # ESP-IDF drives its build through its own Python modules: kconfgen
+          # turns Kconfig into sdkconfig.h, ldgen into linker fragments, and
+          # esptool makes the images. nixpkgs has pyparsing and esptool but not
+          # esp-idf-kconfig, which also carries the kconfig library those
+          # modules import.
+          espIdfKconfig = pkgs.python3Packages.buildPythonPackage rec {
+            pname = "esp-idf-kconfig";
+            version = "3.14.0";
+            format = "pyproject";
+            src = pkgs.fetchurl {
+              url = "https://files.pythonhosted.org/packages/f9/d8/14d43b9f2fe389d8ed9d7279e776779d30a1d00dc5c70b546b343a65f734/esp_idf_kconfig-3.14.0.tar.gz";
+              hash = "sha256-Pd3P0s5L5gKxIx2VqNL3mF3QuaYgAtzGgJFkyUpuu8U=";
+            };
+            build-system = [ pkgs.python3Packages.setuptools ];
+            dependencies = with pkgs.python3Packages; [
+              esp-pylib
+              pyparsing
+              textual
+            ];
+            doCheck = false;
+          };
+
+          espPython = pkgs.python3.withPackages (
+            ps:
+            [
+              ps.packaging
+              espIdfKconfig
+              (ps.toPythonModule pkgs.esptool)
+            ]
+            ++ (with ps; [
+              esp-pylib
+              pyparsing
+              rich
+              rich-click
+              textual
+            ])
+          );
+
           rustToolchain = pkgs.rust-bin.stable.latest.default;
+
+          # ESP-IDF's configure step re-checks a pip virtualenv under
+          # IDF_TOOLS_PATH against its full "core" requirement list, most of
+          # which is idf.py tooling (monitor, coredump, sbom) this build never
+          # runs. `idf.py` passes -DPYTHON_DEPS_CHECKED=1 after doing that check
+          # itself, and the bootloader sub-project passes it too; esp-idf-sys
+          # calls cmake directly, so supply the flag the same way.
+          cmake = pkgs.writeShellScriptBin "cmake" ''
+            for arg in "$@"; do
+              case "$arg" in
+                --build|--install|--open|-E)
+                  exec ${pkgs.cmake}/bin/cmake "$@"
+                  ;;
+              esac
+            done
+            exec ${pkgs.cmake}/bin/cmake "$@" -DPYTHON_DEPS_CHECKED=1
+          '';
         in
         {
           _module.args.pkgs = import inputs.nixpkgs {
@@ -30,12 +196,78 @@
             overlays = [ inputs.rust-overlay.overlays.default ];
           };
 
-          devShells.default = pkgs.mkShell {
-            packages = with pkgs; [
-              bazel_9
-              rustToolchain
-              sccache
+          packages.default = pkgs.symlinkJoin {
+            name = "esp-idf-toolchain";
+            paths = [
+              espRust
+              riscv32-esp-elf
+              espRomElfs
+              espIdf
+              espPython
+              cmake
+              pkgs.ninja
+              pkgs.ldproxy
+              pkgs.git
+              pkgs.pkg-config
+              pkgs.zlib
+              pkgs.llvmPackages.libclang
+              pkgs.gcc
             ];
+          };
+
+          devShells.default = pkgs.mkShell {
+            packages = [
+              pkgs.bazel_9
+              rustToolchain
+              pkgs.sccache
+            ]
+            ++ (with pkgs; [
+              espRust
+              riscv32-esp-elf
+              espRomElfs
+              espIdf
+              espPython
+              cmake
+              ninja
+              git
+              pkg-config
+              zlib
+              llvmPackages.libclang
+              ldproxy
+              gcc
+            ]);
+
+            # `rust-toolchain.toml` asks for the `esp` channel, but nix has no
+            # rustup, so PATH decides which rustc wins. Put the esp-rs one
+            # first: it is the only one with a firmware std.
+            shellHook = ''
+              export PATH=${espRust}/bin:''${PATH}
+            '';
+
+            # Espressif's prebuilt toolchains are patched to run natively, so
+            # the Bazel action uses plain store paths. Only paths cross the
+            # nix/Bazel boundary; @esp_toolchain forwards them into the build.
+            ESP_TOOLCHAIN_IDF = "${espIdf}";
+            ESP_TOOLCHAIN_ROM_ELFS = "${espRomElfs}";
+            ESP_TOOLCHAIN_LIBCLANG = "${pkgs.llvmPackages.libclang.lib}/lib";
+            # esp-idf-sys treats the environment as "activated" only when
+            # `idf.py` is on PATH and resolves to $IDF_PATH/tools/idf.py, so
+            # that directory goes first, and `python` must satisfy its shebang.
+            ESP_TOOLCHAIN_PATH =
+              "${espIdf}/tools:"
+              + pkgs.lib.makeBinPath [
+                espRust
+                riscv32-esp-elf
+                espPython
+                cmake
+                pkgs.ninja
+                pkgs.ldproxy
+                pkgs.git
+                pkgs.pkg-config
+                pkgs.gcc
+                pkgs.bash
+                pkgs.coreutils
+              ];
           };
 
           pre-commit.settings = {
