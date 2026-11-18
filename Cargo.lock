@@ -565,6 +565,7 @@ dependencies = [
 name = "esp-idf-bazel"
 version = "0.1.0"
 dependencies = [
+ "embassy-time-queue-utils",
  "embuild",
  "esp-idf-svc",
  "log",

@@ -25,6 +25,10 @@ esp-idf-svc = { version = "0.53", features = [
   "embassy-time-driver",
   "embassy-sync",
 ] }
+# `embassy-time-driver` pulls in this crate without a queue feature. The
+# default queue calls `__embassy_time_queue_item_from_waker`, which only
+# embassy-executor defines. `generic-queue-8` is the standalone queue.
+embassy-time-queue-utils = { version = "0.3", features = ["generic-queue-8"] }
 
 [build-dependencies]
 embuild = "0.33.5"
