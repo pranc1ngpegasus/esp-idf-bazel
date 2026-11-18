@@ -1,3 +1,9 @@
 [toolchain]
-channel = "nightly"
-components = ["clippy", "rust-src", "rustfmt"]
+# ESP32-C6 is RISC-V. upstream rustc knows `riscv32imac-esp-espidf`, which is
+# tier 3: rustup has no prebuilt std for it, so `.cargo/config.toml` builds
+# std from `rust-src` with `-Zbuild-std`. CI and the nix shell both read this
+# pin. Do not add the triple under `targets`; rustup refuses to install it.
+# Nightlies after this date fail that std build: `libc::stat` on espidf
+# replaced `st_mtime` with `st_mtim`, and std still reads the old fields.
+channel = "nightly-2026-10-08"
+components = ["rustfmt", "rust-src", "clippy"]

@@ -1,0 +1,79 @@
+name: CI
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+env:
+  ESP_IDF_VERSION: v6.1.1
+  ESP_IDF_PATH: ${{ github.workspace }}/.esp-idf
+  IDF_TOOLS_PATH: ${{ github.workspace }}/.espressif
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: bazel-contrib/setup-bazel@0.19.2
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+      - uses: taiki-e/install-action@v2.90.5
+        with:
+          tool: ldproxy
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: espressif/esp-idf
+          ref: ${{ env.ESP_IDF_VERSION }}
+          submodules: true
+          path: ${{ env.ESP_IDF_PATH }}
+      # ESP32-C6 only. `install.sh esp32c6` fetches the RISC-V GCC, the ROM
+      # ELFs and the Python environment. Xtensa toolchains are not installed.
+      - name: Install the ESP32-C6 C toolchain
+        run: |
+          "$ESP_IDF_PATH/install.sh" esp32c6
+          echo "$ESP_IDF_PATH/tools" >> "$GITHUB_PATH"
+
+      - uses:  tecolicom/actions-use-apt-tools@v1
+        with:
+          tools: cmake ninja-build clang libclang-dev libusb-1.0-0
+
+      # ESP-IDF skips its Python dependency check when cmake is told the check
+      # already ran; `idf.py` passes that flag, esp-idf-sys calls cmake plainly.
+      # nix does the same with a cmake wrapper in flake.nix.
+      - name: Wrap cmake with the flag ESP-IDF expects from idf.py
+        run: sudo bash scripts/wrap-cmake.sh /usr/bin/cmake
+
+      # Two consumers read different names. Bazel reads the ESP_TOOLCHAIN_*
+      # set through //bazel:esp_toolchain.bzl, and a bare `cargo clippy` reads
+      # the ESP-IDF names and the cross compiler from the environment.
+      - name: Expose the toolchain to Bazel and to cargo
+        run: |
+          . "$ESP_IDF_PATH/export.sh"
+          libclang=$(dirname "$(find /usr/lib -name 'libclang.so*' -print -quit)")
+          {
+            echo "ESP_TOOLCHAIN_IDF=$IDF_PATH"
+            echo "ESP_TOOLCHAIN_IDF_TOOLS_PATH=$IDF_TOOLS_PATH"
+            echo "ESP_TOOLCHAIN_ROM_ELFS=$ESP_ROM_ELF_DIR"
+            echo "ESP_TOOLCHAIN_LIBCLANG=$libclang"
+            echo "ESP_TOOLCHAIN_PATH=$PATH"
+            echo "IDF_PATH=$IDF_PATH"
+            echo "IDF_TOOLS_PATH=$IDF_TOOLS_PATH"
+            echo "ESP_ROM_ELF_DIR=$ESP_ROM_ELF_DIR"
+            echo "LIBCLANG_PATH=$libclang"
+            echo "PATH=$PATH"
+          } >> "$GITHUB_ENV"
+      - name: Build
+        run: bazel build //...
+
+      - name: Test
+        run: bazel test //...
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check --color always
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings

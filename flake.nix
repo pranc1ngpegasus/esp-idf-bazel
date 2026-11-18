@@ -1,4 +1,6 @@
 {
+  description = "ESP-IDF firmware: nix supplies the toolchain, Bazel orchestrates the build";
+
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1";
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -22,7 +24,10 @@
       perSystem =
         { pkgs, system, ... }:
         let
-          rustToolchain = pkgs.rust-bin.stable.latest.default;
+          toolchain = import ./nix/toolchain.nix {
+            inherit pkgs;
+            toolchainFile = ./rust-toolchain.toml;
+          };
         in
         {
           _module.args.pkgs = import inputs.nixpkgs {
@@ -30,12 +35,21 @@
             overlays = [ inputs.rust-overlay.overlays.default ];
           };
 
-          devShells.default = pkgs.mkShell {
-            packages = with pkgs; [
-              bazel_9
-              rustToolchain
-              sccache
-            ];
+          devShells.default = pkgs.mkShell (
+            toolchain.env
+            // {
+              packages = [
+                pkgs.bazel_9
+                pkgs.sccache
+              ]
+              ++ toolchain.packages;
+              inherit (toolchain) shellHook;
+            }
+          );
+
+          packages.default = pkgs.symlinkJoin {
+            name = "esp-idf-toolchain";
+            paths = toolchain.packages;
           };
 
           pre-commit.settings = {
@@ -48,9 +62,10 @@
           treefmt = {
             projectRootFile = "flake.nix";
             programs = {
+              buildifier.enable = true;
               nixfmt.enable = true;
               rustfmt.enable = true;
-              rustfmt.package = rustToolchain;
+              rustfmt.package = toolchain.rustToolchain;
               taplo.enable = true;
             };
           };

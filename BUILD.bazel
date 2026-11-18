@@ -1,0 +1,33 @@
+load("//bazel:esp_idf.bzl", "firmware")
+
+firmware(
+    name = "firmware",
+    srcs = glob(
+        [
+            "src/**",
+            "Cargo.toml",
+            "Cargo.lock",
+            "build.rs",
+            "sdkconfig.defaults",
+            "rust-toolchain.toml",
+            ".cargo/config.toml",
+        ],
+        allow_empty = False,
+    ),
+    binary = "esp-idf-bazel",
+    rust_target = "riscv32imac-esp-espidf",
+)
+
+[
+    filegroup(
+        name = name,
+        srcs = [":firmware"],
+        output_group = name,
+        visibility = ["//visibility:public"],
+    )
+    for name in [
+        "elf",
+        "bootloader",
+        "partition_table",
+    ]
+]

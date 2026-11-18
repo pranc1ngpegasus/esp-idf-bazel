@@ -1,0 +1,9 @@
+# The firmware action runs cargo, which drives ESP-IDF's CMake and ninja build
+# inside its own target directory. That is not sandbox friendly, so the rule
+# opts out with `no-sandbox`; every tool the action runs comes from the exported
+# toolchain, so invoke Bazel from `nix develop` or source the CI environment.
+build --incompatible_strict_action_env
+
+test --test_output=errors
+
+try-import %workspace%/user.bazelrc
