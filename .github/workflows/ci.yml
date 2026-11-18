@@ -29,9 +29,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           repository: espressif/esp-idf
-          ref: "$ESP_IDF_VERSION"
+          ref: {{ env.ESP_IDF_VERSION }}
           submodules: true
-          path: "$ESP_IDF_PATH"
+          path: {{ env.ESP_IDF_PATH }}
       - run: |
           "$ESP_IDF_PATH/install.sh" esp32c6
           echo "$ESP_IDF_PATH/tools" >> "$GITHUB_PATH"
