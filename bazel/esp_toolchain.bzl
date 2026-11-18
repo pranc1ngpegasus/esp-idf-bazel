@@ -1,13 +1,14 @@
 """Forwards the ESP toolchain paths the firmware action needs.
 
-Nothing here supplies a compiler: whether nix, espup or a container provides
-the toolchain, it exports the variables below and this rule copies them into a
-generated `.bzl`. The firmware action then gets `IDF_PATH`, the ROM ELF
-directory, `LIBCLANG_PATH` for bindgen, and the `PATH` holding rustc, cargo,
-riscv32-esp-elf-gcc, ldproxy, cmake, ninja and the ESP-IDF Python.
+Nothing here supplies a compiler. nix or CI exports the variables below and
+this rule copies them into a generated `.bzl`. The firmware action then gets
+`IDF_PATH`, the ROM ELF directory, `LIBCLANG_PATH` for bindgen, and the `PATH`
+holding rustc, cargo, riscv32-esp-elf-gcc, ldproxy, cmake, ninja and the
+ESP-IDF Python.
 
 `IDF_TOOLS_PATH` is optional. esp-idf-sys reads it to find ESP-IDF's own Python
-environment, which espup sets up and nix replaces with a store interpreter.
+environment. CI's `install.sh esp32c6` sets that up; nix supplies a store
+interpreter and leaves the variable unset.
 """
 
 _REQUIRED = {

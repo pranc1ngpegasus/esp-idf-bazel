@@ -23,13 +23,17 @@ jobs:
       - uses: taiki-e/install-action@v2.90.5
         with:
           tool: ldproxy
+      - uses: actions-rust-lang/setup-rust-toolchain@v2.0.1
       - uses: actions/checkout@v7.0.1
         with:
           repository: espressif/esp-idf
           ref: ${{ env.ESP_IDF_VERSION }}
           submodules: true
           path: ${{ env.ESP_IDF_PATH }}
-      - run: |
+      # ESP32-C6 only. `install.sh esp32c6` fetches the RISC-V GCC, the ROM
+      # ELFs and the Python environment. Xtensa toolchains are not installed.
+      - name: Install the ESP32-C6 C toolchain
+        run: |
           "$ESP_IDF_PATH/install.sh" esp32c6
           echo "$ESP_IDF_PATH/tools" >> "$GITHUB_PATH"
 
@@ -50,7 +54,6 @@ jobs:
       - name: Expose the toolchain to Bazel and to cargo
         run: |
           . "$ESP_IDF_PATH/export.sh"
-          . "$HOME/exports"
           libclang=$(dirname "$(find /usr/lib -name 'libclang.so*' -print -quit)")
           {
             echo "ESP_TOOLCHAIN_IDF=$IDF_PATH"

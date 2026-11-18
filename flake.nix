@@ -62,50 +62,6 @@
               '';
             };
 
-          espRust = pkgs.stdenv.mkDerivation {
-            pname = "esp-rust-toolchain";
-            version = "1.100.0.0";
-            src = pkgs.fetchurl {
-              url = "https://github.com/esp-rs/rust-build/releases/download/v1.100.0.0/rust-1.100.0.0-x86_64-unknown-linux-gnu.tar.xz";
-              hash = "sha256-Wp+tPi+ELdcnGeR+ONWNdt+44mB0xkEIPgLX9mo0Cgw=";
-            };
-            rustSrc = pkgs.fetchurl {
-              url = "https://github.com/esp-rs/rust-build/releases/download/v1.100.0.0/rust-src-1.100.0.0.tar.xz";
-              hash = "sha256-vsSi59kUwjc5H53aH1MJddkv2m+xWzx8zDBTyxFvnU4=";
-            };
-            inherit (patchPrebuilt) nativeBuildInputs buildInputs;
-            unpackPhase = ''
-              runHook preUnpack
-              tar -xJf $src --strip-components=1
-              # rust-src extracts to rust-src-nightly/rust-src/lib/rustlib/src/rust;
-              # build-std needs it at <sysroot>/lib/rustlib/src/rust.
-              tar -xJf $rustSrc -C rustc/lib/rustlib --strip-components=4
-              runHook postUnpack
-            '';
-            dontConfigure = true;
-            dontBuild = true;
-            installPhase = ''
-              runHook preInstall
-              cp -r . $out
-              runHook postInstall
-            '';
-            postFixup = ''
-              # build-std also compiles build scripts and proc-macros for the
-              # host, which need the host std shipped as a separate component.
-              cp -r $out/rust-std-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/. \
-                $out/rustc/lib/rustlib/x86_64-unknown-linux-gnu/
-
-              install -d $out/bin
-              ln -s $out/cargo/bin/cargo $out/bin/cargo
-              ln -s $out/rustc/bin/rustc $out/bin/rustc
-              ln -s $out/rustc/bin/rustdoc $out/bin/rustdoc
-              ln -s $out/rustfmt-preview/bin/rustfmt $out/bin/rustfmt
-              ln -s $out/rustfmt-preview/bin/cargo-fmt $out/bin/cargo-fmt
-              ln -s $out/clippy-preview/bin/cargo-clippy $out/bin/cargo-clippy
-              ln -s $out/clippy-preview/bin/clippy-driver $out/bin/clippy-driver
-            '';
-          };
-
           riscv32-esp-elf = prebuilt {
             pname = "riscv32-esp-elf";
             version = "esp-15.2.0_20251204";
@@ -171,7 +127,10 @@
             ])
           );
 
-          rustToolchain = pkgs.rust-bin.stable.latest.default;
+          # Same pin as CI. `rust-src` is what `-Zbuild-std` compiles the
+          # `riscv32imac-esp-espidf` std from. This shell has no rustup, so the
+          # file is applied here instead of by a rustup proxy.
+          rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
           # ESP-IDF's configure step re-checks a pip virtualenv under
           # IDF_TOOLS_PATH against its full "core" requirement list, most of
@@ -199,7 +158,7 @@
           packages.default = pkgs.symlinkJoin {
             name = "esp-idf-toolchain";
             paths = [
-              espRust
+              rustToolchain
               riscv32-esp-elf
               espRomElfs
               espIdf
@@ -222,7 +181,6 @@
               pkgs.sccache
             ]
             ++ (with pkgs; [
-              espRust
               riscv32-esp-elf
               espRomElfs
               espIdf
@@ -237,12 +195,11 @@
               gcc
             ]);
 
-            # `rust-toolchain.toml` asks for the `esp` channel, but nix has no
-            # rustup, so PATH decides which rustc wins. Put the esp-rs one
-            # first: it is the only one with a firmware std. ESP-IDF's `tools`
-            # goes ahead of it because esp-idf-sys checks for `idf.py` there.
+            # ESP-IDF's `tools` goes ahead of the nightly cargo because
+            # esp-idf-sys checks for `idf.py` there. The nightly itself is
+            # already on PATH via `rustToolchain`.
             shellHook = ''
-              export PATH=${espIdf}/tools:${espRust}/bin:''${PATH}
+              export PATH=${espIdf}/tools:''${PATH}
             '';
 
             # Espressif's prebuilt toolchains are patched to run natively, so
@@ -264,7 +221,7 @@
             ESP_TOOLCHAIN_PATH =
               "${espIdf}/tools:"
               + pkgs.lib.makeBinPath [
-                espRust
+                rustToolchain
                 riscv32-esp-elf
                 espPython
                 cmake

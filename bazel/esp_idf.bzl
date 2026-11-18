@@ -1,12 +1,13 @@
-"""Builds the ESP-IDF firmware with the esp-rs `cargo`.
+"""Builds the ESP32-C6 firmware with upstream nightly `cargo`.
 
-No Rust distribution ships a std for `*-esp-espidf`, and the esp-rs rustc fork
-is not a Bazel toolchain, so rules_rs and rules_rust cannot compile this crate.
-The esp-rs cargo can: it builds std from source and lets `esp-idf-sys` drive
-ESP-IDF's CMake build. That cargo and every tool it shells out to come from the
-build environment (`nix develop`, or espup in CI), forwarded by
-`@esp_toolchain`. This rule declares the crate's inputs and the images
-produced, so Bazel still owns the graph, the actions and the artifact tracking.
+No Rust distribution ships a prebuilt std for `riscv32imac-esp-espidf`. The
+triple is a tier 3 target in upstream rustc, so `-Zbuild-std` compiles std
+from `rust-src`, and `esp-idf-sys` drives ESP-IDF's CMake build. rules_rs and
+rules_rust do not do that, so this rule shells out to cargo. That cargo and
+every tool it shells out to come from the build environment (`nix develop`,
+or CI), forwarded by `@esp_toolchain`. This rule declares the crate's inputs
+and the images produced, so Bazel still owns the graph, the actions and the
+artifact tracking.
 
 Target, MCU, rustflags and build-std live in `.cargo/config.toml`, so a plain
 `cargo build` in the same environment and `bazel build //:firmware` compile the
@@ -62,7 +63,7 @@ def _firmware_impl(ctx):
     }
 
     # esp-idf-sys looks here for ESP-IDF's Python environment. nix supplies that
-    # interpreter directly, so only espup-based setups define it.
+    # interpreter directly, so only the CI installer defines it.
     if "IDF_TOOLS_PATH" in PATHS:
         env["IDF_TOOLS_PATH"] = PATHS["IDF_TOOLS_PATH"]
 
