@@ -62,6 +62,7 @@
           treefmt = {
             projectRootFile = "flake.nix";
             programs = {
+              buildifier.enable = true;
               nixfmt.enable = true;
               rustfmt.enable = true;
               rustfmt.package = toolchain.rustToolchain;
