@@ -36,7 +36,7 @@ cp -r "$prefix/rust-std-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linu
 # this archive splits rustc, cargo and rustc's companion tools across sibling
 # directories. Without cargo here, rustup borrows the stable one, whose channel
 # rejects `-Zbuild-std`.
-for bin in "$prefix"/cargo/bin/* "$prefix"/rustfmt-preview/bin/*; do
+for bin in "$prefix"/cargo/bin/* "$prefix"/rustfmt-preview/bin/* "$prefix"/clippy-preview/bin/*; do
     ln -sf "$bin" "$prefix/rustc/bin/$(basename "$bin")"
 done
 
