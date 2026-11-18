@@ -239,17 +239,25 @@
 
             # `rust-toolchain.toml` asks for the `esp` channel, but nix has no
             # rustup, so PATH decides which rustc wins. Put the esp-rs one
-            # first: it is the only one with a firmware std.
+            # first: it is the only one with a firmware std. ESP-IDF's `tools`
+            # goes ahead of it because esp-idf-sys checks for `idf.py` there.
             shellHook = ''
-              export PATH=${espRust}/bin:''${PATH}
+              export PATH=${espIdf}/tools:${espRust}/bin:''${PATH}
             '';
 
             # Espressif's prebuilt toolchains are patched to run natively, so
             # the Bazel action uses plain store paths. Only paths cross the
             # nix/Bazel boundary; @esp_toolchain forwards them into the build.
             ESP_TOOLCHAIN_IDF = "${espIdf}";
+            # A plain `cargo build` in the dev shell resolves the same ESP-IDF
+            # that the Bazel action uses, so both compile the crate identically.
+            IDF_PATH = "${espIdf}";
+            ESP_ROM_ELF_DIR = "${espRomElfs}";
             ESP_TOOLCHAIN_ROM_ELFS = "${espRomElfs}";
             ESP_TOOLCHAIN_LIBCLANG = "${pkgs.llvmPackages.libclang.lib}/lib";
+            # bindgen reads LIBCLANG_PATH directly when the crate builds outside
+            # Bazel, so the dev shell exports the same value.
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             # esp-idf-sys treats the environment as "activated" only when
             # `idf.py` is on PATH and resolves to $IDF_PATH/tools/idf.py, so
             # that directory goes first, and `python` must satisfy its shebang.

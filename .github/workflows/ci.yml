@@ -102,3 +102,10 @@ jobs:
 
       - name: Test
         run: bazel test //...
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check --color always
+
+      # Clippy compiles the crate, so it needs the environment set up above.
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings

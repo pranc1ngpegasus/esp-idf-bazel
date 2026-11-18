@@ -16,3 +16,7 @@ ESP_IDF_VERSION = "v6.1.1"
 # Use the ESP-IDF exported into the environment instead of letting esp-idf-sys
 # clone and pip-install a managed copy.
 ESP_IDF_TOOLS_INSTALL_DIR = "fromenv"
+# A plain `cargo build` must reach the same configure step as the Bazel action:
+# nothing here needs a managed component, and the component manager is one more
+# pip package to supply.
+ESP_IDF_COMPONENT_MANAGER = "false"
