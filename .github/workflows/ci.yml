@@ -37,10 +37,9 @@ jobs:
           "$ESP_IDF_PATH/install.sh" esp32c6
           echo "$ESP_IDF_PATH/tools" >> "$GITHUB_PATH"
 
-      - name: Install host build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes cmake ninja-build clang libclang-dev libusb-1.0-0
+      - uses:  tecolicom/actions-use-apt-tools@v1
+        with:
+          tools: cmake ninja-build clang libclang-dev libusb-1.0-0
 
       # ESP-IDF skips its Python dependency check when cmake is told the check
       # already ran; `idf.py` passes that flag, esp-idf-sys calls cmake plainly.
