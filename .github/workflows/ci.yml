@@ -81,19 +81,7 @@ jobs:
       # already ran; `idf.py` passes that flag, esp-idf-sys calls cmake plainly.
       # nix does the same with a cmake wrapper in flake.nix.
       - name: Wrap cmake with the flag ESP-IDF expects from idf.py
-        run: |
-          sudo mv /usr/bin/cmake /usr/bin/cmake.real
-          sudo tee /usr/bin/cmake >/dev/null <<'WRAPPER'
-#!/usr/bin/env bash
-set -euo pipefail
-for arg in "$@"; do
-  case "$arg" in
-    --build|--install|--open|-E) exec /usr/bin/cmake.real "$@";;
-  esac
-done
-exec /usr/bin/cmake.real "$@" -DPYTHON_DEPS_CHECKED=1
-WRAPPER
-          sudo chmod +x /usr/bin/cmake
+        run: sudo bash scripts/wrap-cmake.sh /usr/bin/cmake
 
       - name: Expose the toolchain where //bazel:esp_toolchain.bzl reads it
         run: |
