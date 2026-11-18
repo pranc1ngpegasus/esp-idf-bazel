@@ -45,6 +45,27 @@ def _firmware_impl(ctx):
         cargo.append("--release")
     cargo.append("--locked")
 
+    env = {
+        "IDF_PATH": PATHS["IDF_PATH"],
+        "ESP_ROM_ELF_DIR": PATHS["ESP_ROM_ELF_DIR"],
+        "LIBCLANG_PATH": PATHS["LIBCLANG_PATH"],
+        "CARGO_TARGET_DIR": target_dir.path,
+        # Use the ESP-IDF and Python from the environment instead of letting
+        # esp-idf-sys clone and pip-install a managed copy.
+        "ESP_IDF_TOOLS_INSTALL_DIR": "fromenv",
+        # Nothing here needs a managed component, and the component manager
+        # is one more pip package.
+        "ESP_IDF_COMPONENT_MANAGER": "false",
+        # Bazel prepends its own shell tools to an action's PATH, which
+        # would shadow the Python that carries ESP-IDF's modules.
+        "ESP_TOOLCHAIN_PATH": PATHS["PATH"],
+    }
+
+    # esp-idf-sys looks here for ESP-IDF's Python environment. nix supplies that
+    # interpreter directly, so only espup-based setups define it.
+    if "IDF_TOOLS_PATH" in PATHS:
+        env["IDF_TOOLS_PATH"] = PATHS["IDF_TOOLS_PATH"]
+
     ctx.actions.run_shell(
         command = "\n".join(
             [
@@ -55,21 +76,7 @@ def _firmware_impl(ctx):
         ),
         inputs = ctx.files.srcs,
         outputs = [target_dir] + images.values(),
-        env = {
-            "IDF_PATH": PATHS["IDF_PATH"],
-            "ESP_ROM_ELF_DIR": PATHS["ESP_ROM_ELF_DIR"],
-            "LIBCLANG_PATH": PATHS["LIBCLANG_PATH"],
-            "CARGO_TARGET_DIR": target_dir.path,
-            # Use the ESP-IDF and Python from the environment instead of letting
-            # esp-idf-sys clone and pip-install a managed copy.
-            "ESP_IDF_TOOLS_INSTALL_DIR": "fromenv",
-            # Nothing here needs a managed component, and the component manager
-            # is one more pip package.
-            "ESP_IDF_COMPONENT_MANAGER": "false",
-            # Bazel prepends its own shell tools to an action's PATH, which
-            # would shadow the Python that carries ESP-IDF's modules.
-            "ESP_TOOLCHAIN_PATH": PATHS["PATH"],
-        },
+        env = env,
         mnemonic = "EspIdfFirmware",
         progress_message = "Building ESP-IDF firmware for %s" % ctx.attr.rust_target,
         execution_requirements = {"no-sandbox": "1"},

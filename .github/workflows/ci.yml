@@ -83,10 +83,14 @@ jobs:
       - name: Wrap cmake with the flag ESP-IDF expects from idf.py
         run: sudo bash scripts/wrap-cmake.sh /usr/bin/cmake
 
+      # esp-idf-sys finds the Python environment under IDF_TOOLS_PATH; the
+      # exported variables do not carry it, so pass it through the toolchain
+      # repository instead of relying on the workflow environment.
       - name: Expose the toolchain where //bazel:esp_toolchain.bzl reads it
         run: |
           . "$ESP_IDF_PATH/export.sh"
           {
+            echo "ESP_TOOLCHAIN_IDF_TOOLS_PATH=$IDF_TOOLS_PATH"
             echo "ESP_TOOLCHAIN_IDF=$IDF_PATH"
             echo "ESP_TOOLCHAIN_ROM_ELFS=$ESP_ROM_ELF_DIR"
             echo "ESP_TOOLCHAIN_LIBCLANG=$(dirname "$(find /usr/lib -name 'libclang.so*' -print -quit)")"
