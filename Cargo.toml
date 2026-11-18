@@ -5,7 +5,7 @@ edition = "2024"
 
 [[bin]]
 name = "esp-idf-bazel"
-harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
+harness = false        # do not use the built-in cargo test harness -> resolve rust-analyzer errors
 
 [profile.release]
 opt-level = "s"
@@ -20,7 +20,11 @@ esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf.git" }
 
 [dependencies]
 log = "0.4"
-esp-idf-svc = { version = "0.53", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
+esp-idf-svc = { version = "0.53", features = [
+  "critical-section",
+  "embassy-time-driver",
+  "embassy-sync",
+] }
 # Remove `generic-queue-8` if you plan to use `embassy-time` WITH `embassy-executor`
 embassy-time = { version = "0.5", features = ["generic-queue-8"] }
 
